@@ -14,7 +14,8 @@
     "vue": "^3.5.13",
     "vue-print-designer": "^1.7.33",
     "@lark-base-open/js-sdk": "^1.0.2",
-    "pinyin-pro": "^3.29.3"
+    "pinyin-pro": "^3.29.3",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
