@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDesigner } from './print/useDesigner'
 import { localTemplateRepo } from './data/templateRepo'
 import { buildTableTemplate, buildFieldTemplate, type LinkTableSpec } from './print/templateFactory'
 import {
   getSelectionVariables,
+  getRecordVariables,
   getAllRecordsVariables,
   getTableInfo,
   isInFeishu,
+  onSelectionChange,
   getLinkFields,
   getLinkSubFields,
   type LinkFieldInfo,
@@ -35,7 +37,12 @@ const diagText = ref('')
 const showDiag = ref(false)
 // 当前表名（用于关联配置持久化的 key）与「未选中记录·用第1条」角标
 const currentTableName = ref('')
+const currentTableId = ref('') // 当前激活表 tableId，用于选区变化判同表
 const noSelection = ref(false)
+// 选区变化跟随：记录上次已读 recordId（避免重复读取），防抖计时器，取消监听函数
+let lastSelRecordId = ''
+let selTimer: ReturnType<typeof setTimeout> | null = null
+let offSelection: (() => void) | undefined = undefined
 
 // —— 关联字段（场景 B）两级勾选 UI 状态 ——
 const showLinkPanel = ref(false)
@@ -109,10 +116,18 @@ async function initDesigner() {
       const info = await getTableInfo()
       fieldMap.value = info.fieldMap
       currentTableName.value = info.tableName
+      currentTableId.value = info.tableId
       // 方案 A：恢复上次保存的关联明细勾选，日常「从飞书读取」即可自动排版+注入
       restoreLinkCfg()
     } catch {
       /* 忽略，读取记录时会再拿 */
+    }
+    // 跟随选区变化：用户点击/切换记录时自动读取该记录并注入、清除「未选中」角标。
+    // 用 onSelectionChange 事件携带的 recordId（比再次 getSelection() 更可靠，侧边栏里后者常为 null）。
+    try {
+      offSelection = onSelectionChange(onFeishuSelectionChange)
+    } catch {
+      /* 旧版 SDK 无该事件则忽略，仍可用按钮手动读取 */
     }
   }
   // 尝试恢复上次保存的模板
@@ -164,6 +179,42 @@ async function autoLoadOnOpen(hasSavedTemplate: boolean) {
     }
   } catch (e: any) {
     log('打开自动读取失败：' + (e?.message ?? e), false)
+  }
+}
+
+// 选区变化回调（用户点击记录/单元格/切换表）。仅当记录变化且属于当前表时才刷新，
+// 避免单元格/字段内移动导致无意义的重复读取。
+function onFeishuSelectionChange(event: {
+  data: { tableId: string | null; recordId: string | null; fieldId: string | null; viewId: string | null; baseId: string | null }
+}) {
+  const data = event?.data ?? ({} as any)
+  const tableId = data.tableId ?? null
+  const recordId = data.recordId ?? null
+  // 跨表切换：忽略（防止把别的表数据注入当前模板）
+  if (tableId && currentTableId.value && tableId !== currentTableId.value) return
+  // 记录未变（仅在单元格/字段间移动）：不重复读取
+  if (recordId && recordId === lastSelRecordId) return
+  lastSelRecordId = recordId ?? ''
+  // 失去选区（点到空白/字段）：不刷数据，保留当前内容，也不翻转角标
+  if (!recordId) return
+  if (selTimer) clearTimeout(selTimer)
+  selTimer = setTimeout(() => followSelection(recordId), 300)
+}
+
+// 跟随选区：精确读取被点击的记录并注入，清除「未选中」角标。只注入数据、不改排版。
+async function followSelection(recordId: string) {
+  if (!inFeishu.value) return
+  try {
+    const { vars, rows, fieldMap: fm } = await getRecordVariables(recordId, currentLinkExpand.value)
+    const data = { ...vars, rows }
+    lastData.value = data
+    lastFieldMap.value = fm ?? {}
+    if (fm) fieldMap.value = fm
+    noSelection.value = false // 已跟随到具体记录，清除「未选中·用第1条」角标
+    applyData(data, { merge: true })
+    log(`已跟随选区刷新：注入记录 ${recordId}（${Object.keys(vars).length} 个字段变量）`)
+  } catch (e: any) {
+    log('跟随选区刷新失败：' + (e?.message ?? e), false)
   }
 }
 
@@ -588,6 +639,19 @@ async function copyDiag() {
 }
 
 onMounted(initDesigner)
+
+// 卸载时移除选区监听，避免内存泄漏与跨实例误触发
+onBeforeUnmount(() => {
+  if (offSelection) {
+    try {
+      offSelection()
+    } catch {
+      /* 忽略 */
+    }
+    offSelection = undefined
+  }
+  if (selTimer) clearTimeout(selTimer)
+})
 </script>
 
 <template>

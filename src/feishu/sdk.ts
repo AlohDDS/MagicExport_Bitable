@@ -94,6 +94,8 @@ function uniqueKey(base: string, used: Set<string>): string {
 
 export interface TableInfo {
   tableName: string
+  /** 当前激活表 tableId，用于选区变化时判断是否属于同一张表 */
+  tableId: string
   fieldNames: string[]
   /** 字段名 → 英文变量名映射 */
   fieldMap: Record<string, string>
@@ -137,7 +139,7 @@ export async function getTableInfo(): Promise<TableInfo> {
   const used = new Set<string>()
   const fieldMap: Record<string, string> = {}
   fieldNames.forEach((n) => (fieldMap[n] = toVarKey(n, used)))
-  return { tableName, fieldNames, fieldMap }
+  return { tableName, tableId: table.id, fieldNames, fieldMap }
 }
 
 // 读取指定记录（单条或批量），拍平为模板变量：
@@ -279,6 +281,30 @@ export async function getSelectionVariables(linkExpand: LinkExpandSpec[] = []): 
     rows,
     fieldMap,
     note: `未选中记录，已用当前视图第 1 条（共 ${ids.length} 条）。如需指定某条，请在表格选中该行后重读。`,
+  }
+}
+
+// 读取指定 recordId 的记录（用于跟随选区变化刷新）。直接读该记录，不回退、不提示「未选中」。
+export async function getRecordVariables(
+  recordId: string,
+  linkExpand: LinkExpandSpec[] = [],
+): Promise<FeishuVarsResult> {
+  await assertFeishu()
+  const { vars, rows, fieldMap } = await readRecords([recordId], linkExpand)
+  return { vars, rows, fieldMap }
+}
+
+// 监听选区变化（用户点击记录/单元格/切换表）。返回取消监听函数（无该能力时返回 undefined）。
+// 飞书文档：event.data = { baseId, tableId, viewId, fieldId, recordId }，recordId 为当前激活记录。
+export function onSelectionChange(
+  cb: (e: {
+    data: { baseId: string | null; tableId: string | null; viewId: string | null; fieldId: string | null; recordId: string | null }
+  }) => void,
+): (() => void) | undefined {
+  try {
+    return bitable.base.onSelectionChange(cb as any) as (() => void) | undefined
+  } catch {
+    return undefined
   }
 }
 
