@@ -45,6 +45,7 @@ const tplName = ref('')
 const tplList = ref<string[]>([])
 const tplBusy = ref(false)
 const tplError = ref('')
+const tplMsg = ref('')
 
 const displayFieldMap = computed<Record<string, string>>(() => {
   const out: Record<string, string> = {}
@@ -591,10 +592,12 @@ async function saveTpl() {
   }
   tplBusy.value = true
   tplError.value = ''
+  tplMsg.value = ''
   try {
     const data = getTemplateData()
     await templateRepo.value.save(name, data)
     await refreshTemplates()
+    tplMsg.value = '已保存「' + name + '」'
     log('模板「' + name + '」已保存')
   } catch (e: any) {
     tplError.value = '保存失败：' + (e?.message ?? e)
@@ -606,6 +609,7 @@ async function saveTpl() {
 async function loadTpl(name: string) {
   tplBusy.value = true
   tplError.value = ''
+  tplMsg.value = ''
   try {
     const data = await templateRepo.value.load(name)
     if (!data) {
@@ -614,6 +618,7 @@ async function loadTpl(name: string) {
     }
     loadTemplateData(data)
     tplName.value = name
+    tplMsg.value = '已加载「' + name + '」'
     log('模板「' + name + '」已加载')
   } catch (e: any) {
     tplError.value = '加载失败：' + (e?.message ?? e)
@@ -625,10 +630,12 @@ async function loadTpl(name: string) {
 async function deleteTpl(name: string) {
   tplBusy.value = true
   tplError.value = ''
+  tplMsg.value = ''
   try {
     await templateRepo.value.remove(name)
     await refreshTemplates()
     if (tplName.value === name) tplName.value = ''
+    tplMsg.value = '已删除「' + name + '」'
     log('模板「' + name + '」已删除')
   } catch (e: any) {
     tplError.value = '删除失败：' + (e?.message ?? e)
@@ -743,9 +750,10 @@ onBeforeUnmount(() => {
         <button class="mini" @click="showTplPanel = false">关闭</button>
       </div>
       <div class="tplsave">
-        <input v-model="tplName" placeholder="模板名称，如 出库单01" @keyup.enter="saveTpl" />
+        <input v-model="tplName" @input="tplMsg = ''; tplError = ''" placeholder="模板名称，如 出库单01" @keyup.enter="saveTpl" />
         <button :disabled="tplBusy" @click="saveTpl">保存当前为</button>
       </div>
+      <div v-if="tplMsg" class="tplok">{{ tplMsg }}</div>
       <div v-if="tplError" class="tplerr">{{ tplError }}</div>
       <div v-if="tplBusy" class="tplmsg">处理中…</div>
       <div v-if="!tplList.length" class="tplmsg">暂无已保存模板。</div>
@@ -900,11 +908,11 @@ onBeforeUnmount(() => {
   padding: 8px;
 }
 .tplpanel {
-  position: absolute;
+  position: fixed;
   right: 12px;
-  top: 56px;
-  z-index: 30;
-  width: 280px;
+  top: 60px;
+  z-index: 99999;
+  width: 300px;
   background: #fff;
   border: 1px solid #e5e6eb;
   border-radius: 6px;
@@ -957,6 +965,12 @@ onBeforeUnmount(() => {
   color: #f53f3f;
   font-size: 12px;
   margin-bottom: 6px;
+}
+.tplok {
+  color: #00a854;
+  font-size: 12px;
+  margin-bottom: 6px;
+  font-weight: 600;
 }
 .tplmsg {
   font-size: 12px;
