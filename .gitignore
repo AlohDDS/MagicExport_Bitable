@@ -1,0 +1,21 @@
+# 依赖
+node_modules
+
+# 构建产物（由 CI 在 GitHub Actions 内重新生成）
+dist
+
+# 本地日志
+*.log
+
+# 编辑器/系统
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.local
+
+# 本地运行记忆（非插件产物）
+.workbuddy/
+
+# npm 缓存目录（由 .npmrc 的 cache 指定，非仓库内容）
+.npmcache/

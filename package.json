@@ -1,0 +1,25 @@
+{
+  "name": "feishu-record-print-plugin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "飞书多维表格记录视图打印插件（vue-print-designer）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-print-designer": "^1.7.33",
+    "@lark-base-open/js-sdk": "^1.0.2",
+    "pinyin-pro": "^3.29.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vue-tsc": "^2.1.10"
+  }
+}
