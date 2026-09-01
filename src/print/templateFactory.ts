@@ -161,11 +161,12 @@ const PLACEHOLDER_IMG =
 export function buildLinkOnlyTemplate(
   linkTables: LinkTableSpec[],
   title?: string,
+  skipTitle?: boolean,
 ): Record<string, unknown> {
   const pageWidth = 660
   const elements: Record<string, unknown>[] = []
   let y = 20
-  if (title) {
+  if (title && !skipTitle) {
     elements.push({
       id: 'el-title',
       type: 'text',
@@ -195,13 +196,16 @@ export function buildLinkOnlyTemplate(
 
 export function buildFieldTemplate(
   fieldMap: Record<string, string>,
-  opts: { title?: string } = {},
+  opts: { title?: string; skipTitle?: boolean } = {},
   linkTables: LinkTableSpec[] = [],
 ): Record<string, unknown> {
   const title = opts.title ?? 'Field Sheet'
+  const skipTitle = opts.skipTitle ?? false
   const entries = Object.entries(fieldMap).filter(([, v]) => v && v !== '__count')
-  const elements: Record<string, unknown>[] = [
-    {
+  const elements: Record<string, unknown>[] = []
+  let y = 20
+  if (!skipTitle) {
+    elements.push({
       id: 'el-title',
       type: 'text',
       variable: '',
@@ -217,9 +221,9 @@ export function buildFieldTemplate(
         color: '#1d2129',
         backgroundColor: 'transparent',
       },
-    },
-  ]
-  let y = 72
+    })
+    y = 72
+  }
   for (const [fieldName, varKey] of entries) {
     if (isImageLike(fieldName, varKey)) {
       elements.push({

@@ -77,6 +77,54 @@ const currentLinkExpand = computed<LinkExpandSpec[]>(() => {
   return arr
 })
 
+function isCanvasEmpty(): boolean {
+  const tpl = getTemplateData() as any
+  const els = tpl?.pages?.[0]?.elements ?? tpl?.data?.pages?.[0]?.elements
+  return !Array.isArray(els) || els.length === 0
+}
+
+function dedupeIds(els: Record<string, unknown>[], existing: Record<string, unknown>[]): Record<string, unknown>[] {
+  const used = new Set(existing.map((e) => (e as any).id))
+  const stamp = '_g' + Date.now().toString(36)
+  let n = 0
+  return els.map((e) => {
+    const el = e as any
+    let id = el.id
+    if (!id || used.has(id)) {
+      id = (id ? String(id) : 'el') + stamp + '_' + n++
+      used.add(id)
+    }
+    return { ...el, id }
+  })
+}
+
+function appendToCurrentCanvas(newElements: Record<string, unknown>[]): void {
+  const tpl = getTemplateData() as any
+  const pages = Array.isArray(tpl?.pages)
+    ? tpl.pages
+    : Array.isArray(tpl?.data?.pages)
+      ? tpl.data.pages
+      : []
+  const hasPage = pages.length > 0
+  const page = hasPage ? pages[0] : { id: 'page-1', elements: [] }
+  const existing: Record<string, unknown>[] = Array.isArray(page.elements) ? page.elements : []
+  let shifted = newElements
+  if (existing.length) {
+    const bottom = existing.reduce((m: number, e: any) => Math.max(m, (e.y ?? 0) + (e.height ?? 30)), 0)
+    const top = newElements.reduce((m: number, e: any) => Math.min(m, e.y ?? 0), Infinity)
+    const offset = bottom - top + 24
+    shifted = newElements.map((e: any) => ({ ...e, y: (e.y ?? 0) + offset }))
+  }
+  const merged = [...existing, ...dedupeIds(shifted, existing)]
+  const newPages = hasPage
+    ? pages.map((p: any, i: number) => (i === 0 ? { ...p, elements: merged } : p))
+    : [{ id: 'page-1', elements: merged }]
+  const out = Array.isArray(tpl?.pages)
+    ? { ...tpl, pages: newPages }
+    : { id: 'feishu-merged-template', name: 'Feishu Template', pages: newPages }
+  loadTemplateData(out)
+}
+
 function log(msg: string, ok = true) {
   status.value = (ok ? '✓ ' : '✗ ') + msg
   console.log('[plugin]', msg)
@@ -283,7 +331,9 @@ async function generateFieldTemplate() {
     fieldMap.value = info.fieldMap
     lastFieldMap.value = info.fieldMap
     linkVarKeys.value = info.linkVarKeys
-    loadTemplateData(buildFieldTemplate(info.fieldMap, { title: info.tableName || '字段单据' }))
+    const isEmpty = isCanvasEmpty()
+    const built = buildFieldTemplate(info.fieldMap, { title: info.tableName || '字段单据', skipTitle: !isEmpty })
+    appendToCurrentCanvas((built.pages[0] as any).elements)
     const { vars, rows, note, fieldMap: fm } = await getSelectionVariables(currentLinkExpand.value)
     const data = { ...vars, rows }
     lastData.value = data
@@ -430,7 +480,9 @@ async function generateLinkTemplate() {
     const info = await getTableInfo()
     fieldMap.value = info.fieldMap
     lastFieldMap.value = info.fieldMap
-    loadTemplateData(buildLinkOnlyTemplate(specs, info.tableName || '关联单据'))
+    const isEmpty = isCanvasEmpty()
+    const built = buildLinkOnlyTemplate(specs, info.tableName || '关联单据', !isEmpty)
+    appendToCurrentCanvas((built.pages[0] as any).elements)
     const { vars, rows, fieldMap: fm } = await getSelectionVariables(expand)
     const data = { ...vars, rows }
     lastData.value = data

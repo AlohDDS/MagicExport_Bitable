@@ -19,3 +19,6 @@ dist
 
 # npm 缓存目录（由 .npmrc 的 cache 指定，非仓库内容）
 .npmcache/
+
+# 本地备查（建表 SQL 等，含结构信息，不纳入公开仓库）
+supabase/
