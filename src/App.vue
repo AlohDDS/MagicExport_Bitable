@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDesigner } from './print/useDesigner'
 import { localTemplateRepo, type TemplateRepo } from './data/templateRepo'
 import { createSupabaseRepo, supabaseConfigured } from './data/supabaseRepo'
-import { buildTableTemplate, buildFieldTemplate, type LinkTableSpec } from './print/templateFactory'
+import { buildTableTemplate, buildFieldTemplate, buildLinkOnlyTemplate, type LinkTableSpec } from './print/templateFactory'
 import {
   getSelectionVariables,
   getRecordVariables,
@@ -430,7 +430,7 @@ async function generateLinkTemplate() {
     const info = await getTableInfo()
     fieldMap.value = info.fieldMap
     lastFieldMap.value = info.fieldMap
-    loadTemplateData(buildFieldTemplate(info.fieldMap, { title: info.tableName || '字段单据' }, specs))
+    loadTemplateData(buildLinkOnlyTemplate(specs, info.tableName || '关联单据'))
     const { vars, rows, fieldMap: fm } = await getSelectionVariables(expand)
     const data = { ...vars, rows }
     lastData.value = data
