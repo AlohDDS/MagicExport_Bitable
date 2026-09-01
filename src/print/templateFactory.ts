@@ -158,6 +158,41 @@ function isImageLike(fieldName: string, varKey: string): boolean {
 const PLACEHOLDER_IMG =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwIiBoZWlnaHQ9IjEyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjJmM2Y1Ii8+PHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM4YzhjOGMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBwbGFjZWhvbGRlcjwvdGV4dD48L3N2Zz4='
 
+export function buildLinkOnlyTemplate(
+  linkTables: LinkTableSpec[],
+  title?: string,
+): Record<string, unknown> {
+  const pageWidth = 660
+  const elements: Record<string, unknown>[] = []
+  let y = 20
+  if (title) {
+    elements.push({
+      id: 'el-title',
+      type: 'text',
+      variable: '',
+      content: title,
+      x: 40,
+      y,
+      width: pageWidth,
+      height: 32,
+      style: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        color: '#1d2129',
+        backgroundColor: 'transparent',
+      },
+    })
+    y += 52
+  }
+  appendLinkTables(elements, linkTables, y, pageWidth)
+  return {
+    id: 'feishu-link-template',
+    name: title || 'Link Template',
+    pages: [{ id: 'page-1', elements }],
+  }
+}
+
 export function buildFieldTemplate(
   fieldMap: Record<string, string>,
   opts: { title?: string } = {},
