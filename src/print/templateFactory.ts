@@ -7,6 +7,7 @@ export interface LinkTableSpec {
   varKey: string
   tableName: string
   fields: { fieldName: string; varKey: string }[]
+  sumFields?: string[]
 }
 
 function appendLinkTables(
@@ -39,6 +40,7 @@ function appendLinkTables(
       },
     })
     y += 36
+    const hasSum = Array.isArray(spec.sumFields) && spec.sumFields.length > 0
     elements.push({
       id: 'el-link-' + spec.varKey,
       type: 'table',
@@ -48,11 +50,11 @@ function appendLinkTables(
       width: pageWidth,
       height: 200,
       showHeader: true,
-      showFooter: false,
+      showFooter: hasSum,
       tfootRepeat: false,
       autoPaginate: true,
       columnsVariable: '',
-      footerDataVariable: '',
+      footerDataVariable: hasSum ? '@' + spec.varKey + '_rows_footer' : '',
       columns: spec.fields.map((f) => ({ field: f.varKey, header: f.fieldName, width: colW })),
       data: [],
       style: {

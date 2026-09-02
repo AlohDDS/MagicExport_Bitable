@@ -1,0 +1,13 @@
+# 强制所有文本文件以 LF 换行（Web 项目标准，跨平台一致）
+* text=auto eol=lf
+
+# 二进制资源，禁止换行转换（按需增删）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

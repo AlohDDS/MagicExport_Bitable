@@ -93,6 +93,50 @@ export interface LinkExpandSpec {
   varKey: string
   tableId: string
   subFields: string[]
+  sumFields?: string[]
+}
+
+function parseNum(v: unknown): number {
+  if (typeof v === 'number') return v
+  const s = String(v ?? '').replace(/[^0-9.\-]/g, '')
+  if (s === '' || s === '-' || s === '.') return NaN
+  const n = Number(s)
+  return isNaN(n) ? NaN : n
+}
+
+function formatNum(n: number): string {
+  if (!isFinite(n)) return ''
+  const r = Math.round(n * 100) / 100
+  return r.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+// 按指定的 sumFields 计算每列合计，生成 footer 行数组（与 body 同结构）
+function computeFooter(
+  subRows: Record<string, unknown>[],
+  subFields: string[],
+  sumFields: string[],
+): Record<string, unknown>[] {
+  const footerRow: Record<string, unknown> = {}
+  let firstNonSum: string | null = null
+  for (const f of subFields) {
+    if (sumFields.includes(f)) {
+      let total = 0
+      let ok = false
+      for (const row of subRows) {
+        const n = parseNum(row[f])
+        if (!isNaN(n)) {
+          total += n
+          ok = true
+        }
+      }
+      footerRow[f] = ok ? formatNum(total) : ''
+    } else {
+      if (firstNonSum === null) firstNonSum = f
+      footerRow[f] = ''
+    }
+  }
+  if (firstNonSum) footerRow[firstNonSum] = '合计'
+  return [footerRow]
 }
 
 export async function getTableInfo(): Promise<TableInfo> {
@@ -210,6 +254,9 @@ async function readRecords(
         }
       }
       vars[`${spec.varKey}_rows`] = subRows
+      if (spec.sumFields && spec.sumFields.length && subRows.length) {
+        vars[`${spec.varKey}_rows_footer`] = computeFooter(subRows, spec.subFields, spec.sumFields)
+      }
     }
   }
 

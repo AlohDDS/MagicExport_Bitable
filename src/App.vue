@@ -46,6 +46,8 @@ const tplList = ref<string[]>([])
 const tplBusy = ref(false)
 const tplError = ref('')
 const tplMsg = ref('')
+const pendingDelete = ref('')
+const tplFileInput = ref<HTMLInputElement | null>(null)
 
 const displayFieldMap = computed<Record<string, string>>(() => {
   const out: Record<string, string> = {}
@@ -62,7 +64,7 @@ let offSelection: (() => void) | undefined = undefined
 const showLinkPanel = ref(false)
 const linkFields = ref<LinkFieldInfo[]>([])
 const linkSubFieldMap = ref<Record<string, LinkSubFieldInfo[]>>({})
-const checkedLinks = ref<Record<string, { fieldName: string; tableName: string; tableId: string; subFields: string[] }>>({})
+const checkedLinks = ref<Record<string, { fieldName: string; tableName: string; tableId: string; subFields: string[]; sumFields: string[] }>>({})
 const linkBusy = ref(false)
 const linkError = ref('')
 const currentLinkExpand = computed<LinkExpandSpec[]>(() => {
@@ -72,7 +74,8 @@ const currentLinkExpand = computed<LinkExpandSpec[]>(() => {
     const subMap = new Map((linkSubFieldMap.value[vk] ?? []).map((s) => [s.varKey, s]))
     const subs = c.subFields.filter((vk2) => subMap.has(vk2)).map((vk2) => subMap.get(vk2)!.varKey)
     if (!subs.length) continue
-    arr.push({ varKey: vk, tableId: c.tableId, subFields: subs })
+    const sumFields = (c.sumFields ?? []).filter((sf) => subs.includes(sf))
+    arr.push({ varKey: vk, tableId: c.tableId, subFields: subs, sumFields })
   }
   return arr
 })
@@ -389,7 +392,7 @@ async function toggleLinkField(info: LinkFieldInfo) {
   }
   checkedLinks.value = {
     ...checkedLinks.value,
-    [info.varKey]: { fieldName: info.fieldName, tableName: info.tableName, tableId: info.tableId, subFields: [] },
+    [info.varKey]: { fieldName: info.fieldName, tableName: info.tableName, tableId: info.tableId, subFields: [], sumFields: [] },
   }
 }
 
@@ -397,11 +400,34 @@ function toggleSubField(varKey: string, subVarKey: string) {
   const cur = checkedLinks.value[varKey]
   if (!cur) return
   const set = new Set(cur.subFields)
+  if (set.has(subVarKey)) {
+    set.delete(subVarKey)
+    // 移除列时同步清掉它的合计标记，避免脏数据
+    const sumSet = new Set(cur.sumFields)
+    sumSet.delete(subVarKey)
+    checkedLinks.value = {
+      ...checkedLinks.value,
+      [varKey]: { ...cur, subFields: [...set], sumFields: [...sumSet] },
+    }
+  } else {
+    set.add(subVarKey)
+    checkedLinks.value = {
+      ...checkedLinks.value,
+      [varKey]: { ...cur, subFields: [...set] },
+    }
+  }
+}
+
+function toggleSumField(varKey: string, subVarKey: string) {
+  const cur = checkedLinks.value[varKey]
+  if (!cur) return
+  if (!cur.subFields.includes(subVarKey)) return
+  const set = new Set(cur.sumFields)
   if (set.has(subVarKey)) set.delete(subVarKey)
   else set.add(subVarKey)
   checkedLinks.value = {
     ...checkedLinks.value,
-    [varKey]: { ...cur, subFields: [...set] },
+    [varKey]: { ...cur, sumFields: [...set] },
   }
 }
 
@@ -420,9 +446,11 @@ function restoreLinkCfg() {
   try {
     const raw = localStorage.getItem(linkCfgKey())
     if (!raw) return
-    const cfg = JSON.parse(raw) as Record<string, { fieldName: string; tableName: string; tableId: string; subFields: string[] }>
+    const cfg = JSON.parse(raw) as Record<string, { fieldName: string; tableName: string; tableId: string; subFields: string[]; sumFields?: string[] }>
+    const normalized: Record<string, { fieldName: string; tableName: string; tableId: string; subFields: string[]; sumFields: string[] }> = {}
     for (const vk of Object.keys(cfg)) {
       const c = cfg[vk]
+      normalized[vk] = { ...c, sumFields: Array.isArray(c.sumFields) ? c.sumFields : [] }
       if (!linkSubFieldMap.value[vk] && c.tableId) {
         getLinkSubFields(c.tableId)
           .then((subs) => {
@@ -431,7 +459,7 @@ function restoreLinkCfg() {
           .catch(() => {})
       }
     }
-    checkedLinks.value = cfg
+    checkedLinks.value = normalized
   } catch {}
 }
 watch(checkedLinks, () => saveLinkCfg(), { deep: true })
@@ -453,7 +481,7 @@ function buildLinkSpecs(): LinkTableSpec[] {
     const subs = c.subFields
       .filter((vk2) => subMap.has(vk2))
       .map((vk2) => { const s = subMap.get(vk2)!; return { fieldName: s.fieldName, varKey: s.varKey } })
-    if (subs.length) specs.push({ varKey: vk, tableName: c.tableName, fields: subs })
+    if (subs.length) specs.push({ varKey: vk, tableName: c.tableName, fields: subs, sumFields: c.sumFields ?? [] })
   }
   return specs
 }
@@ -469,8 +497,8 @@ async function generateLinkTemplate() {
       .filter((vk2) => subMap.has(vk2))
       .map((vk2) => { const s = subMap.get(vk2)!; return { fieldName: s.fieldName, varKey: s.varKey } })
     if (!fields.length) continue
-    specs.push({ varKey: vk, tableName: c.tableName, fields })
-    expand.push({ varKey: vk, tableId: c.tableId, subFields: fields.map((f) => f.varKey) })
+    specs.push({ varKey: vk, tableName: c.tableName, fields, sumFields: c.sumFields ?? [] })
+    expand.push({ varKey: vk, tableId: c.tableId, subFields: fields.map((f) => f.varKey), sumFields: c.sumFields ?? [] })
   }
   if (!specs.length) {
     log('请至少选择一个关联字段和一个子字段。', false)
@@ -696,6 +724,60 @@ async function deleteTpl(name: string) {
   }
 }
 
+function askDelete(name: string) {
+  pendingDelete.value = name
+}
+
+async function confirmDelete() {
+  const name = pendingDelete.value
+  pendingDelete.value = ''
+  if (name) await deleteTpl(name)
+}
+
+function exportCurrentTpl() {
+  try {
+    const data = getTemplateData()
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safe = (tplName.value.trim() || 'template').replace(/[\\/:*?"<>|]/g, '_')
+    a.href = url
+    a.download = safe + '.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    tplMsg.value = '已导出当前模板到本地文件'
+    log('模板已导出为本地 JSON')
+  } catch (e: any) {
+    tplError.value = '导出失败：' + (e?.message ?? e)
+  }
+}
+
+function triggerImport() {
+  tplFileInput.value?.click()
+}
+
+async function importTplFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    if (!data || (!Array.isArray(data.pages) && !Array.isArray(data?.data?.pages))) {
+      throw new Error('缺少 pages 字段')
+    }
+    loadTemplateData(data)
+    tplMsg.value = '已从本地文件导入模板（如需保存请在上方输入名称后点「保存当前为」）'
+    log('已从本地文件导入模板')
+  } catch (e: any) {
+    tplError.value = '导入失败：文件不是有效的模板 JSON（' + (e?.message ?? e) + '）'
+  } finally {
+    input.value = ''
+  }
+}
+
 async function copyDiag() {
   try {
     await navigator.clipboard.writeText(diagText.value)
@@ -779,6 +861,15 @@ onBeforeUnmount(() => {
             />
             <span>{{ sf.fieldName }}</span>
             <code class="vcode">{{ atVar(sf.varKey) }}</code>
+            <label class="sumtoggle" :title="'将该列纳入合计'">
+              <input
+                type="checkbox"
+                :disabled="!checkedLinks[lf.varKey].subFields.includes(sf.varKey)"
+                :checked="checkedLinks[lf.varKey].sumFields.includes(sf.varKey)"
+                @change="toggleSumField(lf.varKey, sf.varKey)"
+              />
+              <span>∑</span>
+            </label>
           </label>
           <div v-if="!(linkSubFieldMap[lf.varKey] || []).length" class="linkmsg">子表无字段。</div>
         </div>
@@ -801,9 +892,16 @@ onBeforeUnmount(() => {
         <strong>模板（{{ templateRepo.kind === 'supabase' ? '团队共享' : '本地' }}）</strong>
         <button class="mini" @click="showTplPanel = false">关闭</button>
       </div>
+
+      <div class="tplbackup">
+        <button class="ghost" :disabled="tplBusy" @click="exportCurrentTpl">📤 导出当前模板</button>
+        <button class="ghost" :disabled="tplBusy" @click="triggerImport">📥 导入本地模板</button>
+        <input ref="tplFileInput" type="file" accept="application/json,.json" class="hidden" @change="importTplFile" />
+      </div>
+
       <div class="tplsave">
         <input v-model="tplName" @input="tplMsg = ''; tplError = ''" placeholder="模板名称，如 出库单01" @keyup.enter="saveTpl" />
-        <button :disabled="tplBusy" @click="saveTpl">保存当前为</button>
+        <button :disabled="tplBusy || !tplName.trim()" @click="saveTpl">保存当前为</button>
       </div>
       <div v-if="tplMsg" class="tplok">{{ tplMsg }}</div>
       <div v-if="tplError" class="tplerr">{{ tplError }}</div>
@@ -811,8 +909,21 @@ onBeforeUnmount(() => {
       <div v-if="!tplList.length" class="tplmsg">暂无已保存模板。</div>
       <div v-for="n in tplList" :key="n" class="tplrow">
         <span class="tplname" :title="n">{{ n }}</span>
-        <button class="mini" @click="loadTpl(n)">加载</button>
-        <button class="mini danger" @click="deleteTpl(n)">删除</button>
+        <div class="rowactions">
+          <button class="mini load" @click="loadTpl(n)">加载</button>
+          <button class="mini del" :title="'删除「' + n + '」'" @click="askDelete(n)">删除</button>
+        </div>
+      </div>
+
+      <div v-if="pendingDelete" class="tplmodal-mask" @click.self="pendingDelete = ''">
+        <div class="tplmodal">
+          <div class="tplmodal-title">删除模板？</div>
+          <div class="tplmodal-body">模板「{{ pendingDelete }}」删除后不可恢复，是否继续？</div>
+          <div class="tplmodal-foot">
+            <button class="mini" @click="pendingDelete = ''">取消</button>
+            <button class="mini danger" :disabled="tplBusy" @click="confirmDelete">删除</button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -986,6 +1097,33 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   cursor: pointer;
 }
+.tplbackup {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tplbackup .ghost {
+  flex: 1;
+  padding: 5px 6px;
+  border: 1px dashed #c9cdd4;
+  background: #fafbfc;
+  color: #4e5969;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tplbackup .ghost:hover {
+  border-color: #3370ff;
+  color: #3370ff;
+}
+.tplbackup .ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.hidden {
+  display: none;
+}
 .tplsave {
   display: flex;
   gap: 6px;
@@ -1013,6 +1151,95 @@ onBeforeUnmount(() => {
   opacity: 0.6;
   cursor: default;
 }
+.tplrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #f2f3f5;
+}
+.tplname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #1d2129;
+}
+.rowactions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rowactions .mini {
+  padding: 3px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.rowactions .load {
+  border-color: #3370ff;
+  background: #3370ff;
+  color: #fff;
+}
+.rowactions .del {
+  border-color: #f2f3f5;
+  background: #fff;
+  color: #86909c;
+}
+.rowactions .del:hover {
+  border-color: #f53f3f;
+  color: #f53f3f;
+}
+.tplmodal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tplmodal {
+  width: 280px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 18px 16px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+.tplmodal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1d2129;
+  margin-bottom: 8px;
+}
+.tplmodal-body {
+  font-size: 13px;
+  color: #4e5969;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.tplmodal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.tplmodal-foot .mini {
+  padding: 5px 16px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #c9cdd4;
+  background: #fff;
+  color: #4e5969;
+}
+.tplmodal-foot .danger {
+  border-color: #f53f3f;
+  background: #f53f3f;
+  color: #fff;
+}
 .tplerr {
   color: #f53f3f;
   font-size: 12px;
@@ -1028,33 +1255,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #86909c;
   margin-bottom: 6px;
-}
-.tplrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 0;
-  border-top: 1px solid #f2f3f5;
-}
-.tplname {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-.tplrow .mini {
-  padding: 2px 8px;
-  font-size: 12px;
-  border: 1px solid #c9cdd4;
-  background: #fff;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.tplrow .mini.danger {
-  border-color: #f53f3f;
-  color: #f53f3f;
 }
 .linkhead {
   display: flex;
@@ -1124,6 +1324,25 @@ onBeforeUnmount(() => {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   padding: 1px 5px;
   border-radius: 3px;
+}
+.sumtoggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  color: #d97706;
+  cursor: pointer;
+  user-select: none;
+}
+.sumtoggle input {
+  width: 13px;
+  height: 13px;
+  accent-color: #d97706;
+}
+.sumtoggle input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 .linkfoot {
   display: flex;
