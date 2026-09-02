@@ -104,10 +104,38 @@ function parseNum(v: unknown): number {
   return isNaN(n) ? NaN : n
 }
 
-function formatNum(n: number): string {
+interface CellFormat {
+  prefix: string
+  suffix: string
+  decimals: number
+}
+
+// 从该列已有单元格字符串反推显示格式（前缀、后缀、小数位）
+function detectFormat(samples: unknown[]): CellFormat {
+  for (const v of samples) {
+    const s = String(v ?? '').trim()
+    if (!s) continue
+    const m = s.match(/^([^\d\-]*)(-?\d[\d,]*\.?\d*)([^\d]*)$/)
+    if (m) {
+      const prefix = m[1]
+      const numPart = m[2]
+      const suffix = m[3]
+      const decimals = numPart.includes('.') ? numPart.split('.')[1].length : 0
+      return { prefix, suffix, decimals }
+    }
+  }
+  return { prefix: '', suffix: '', decimals: 2 }
+}
+
+function formatWith(n: number, fmt: CellFormat): string {
   if (!isFinite(n)) return ''
-  const r = Math.round(n * 100) / 100
-  return r.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  const factor = Math.pow(10, fmt.decimals)
+  const r = Math.round(n * factor) / factor
+  return (
+    fmt.prefix +
+    r.toLocaleString('en-US', { minimumFractionDigits: fmt.decimals, maximumFractionDigits: fmt.decimals }) +
+    fmt.suffix
+  )
 }
 
 // 按指定的 sumFields 计算每列合计，生成 footer 行数组（与 body 同结构）
@@ -129,7 +157,8 @@ function computeFooter(
           ok = true
         }
       }
-      footerRow[f] = ok ? formatNum(total) : ''
+      const fmt = detectFormat(subRows.map((row) => row[f]))
+      footerRow[f] = ok ? formatWith(total, fmt) : ''
     } else {
       if (firstNonSum === null) firstNonSum = f
       footerRow[f] = ''
